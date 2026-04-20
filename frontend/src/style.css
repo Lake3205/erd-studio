@@ -101,7 +101,6 @@ textarea {
 }
 
 .relationship-lines line {
-  stroke: #2d7dd2;
   stroke-width: 2;
 }
 
@@ -115,10 +114,13 @@ textarea {
 }
 
 .drag-handle {
-  background: #2d7dd2;
   border-radius: 8px 8px 0 0;
   padding: 0.5rem;
   cursor: move;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .drag-handle input {
@@ -133,6 +135,14 @@ textarea {
   outline: none;
 }
 
+.drag-handle input[type='color'] {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 6px;
+  padding: 0.1rem;
+}
+
 .column-list {
   display: grid;
   gap: 0.5rem;
@@ -142,6 +152,9 @@ textarea {
 .column-row {
   display: grid;
   gap: 0.35rem;
+  border: 1px solid #d9e4f0;
+  border-radius: 6px;
+  padding: 0.35rem;
 }
 
 .column-row input {
@@ -156,6 +169,25 @@ textarea {
   align-items: center;
   gap: 0.35rem;
   font-size: 0.85rem;
+}
+
+.column-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.column-actions input[type='color'] {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid #b8c9de;
+  border-radius: 6px;
+  padding: 0.1rem;
+}
+
+.danger-button {
+  background: #b43333;
 }
 
 .table-card button {
