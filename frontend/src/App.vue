@@ -46,38 +46,68 @@ let activeDrag = null
 const tableMap = computed(() => Object.fromEntries(tables.value.map((table) => [table.id, table])))
 const TABLE_WIDTH = 300
 const HEADER_HEIGHT = 48
-const COLUMN_ROW_HEIGHT = 103
-const COLUMN_LIST_PADDING_TOP = 12
+const LUMINANCE_RED_WEIGHT = 299
+const LUMINANCE_GREEN_WEIGHT = 587
+const LUMINANCE_BLUE_WEIGHT = 114
+const LUMINANCE_DIVISOR = 1000
+const LUMINANCE_THRESHOLD = 150
 
-function relationColor(table, columnName) {
-  const column = table.columns.find((item) => item.name === columnName)
+function resolveRelationshipColumn(table, columnId, columnName) {
+  if (!table) {
+    return null
+  }
+  return (
+    table.columns.find((column) => column.id === columnId) ||
+    table.columns.find((column) => column.name === columnName) ||
+    null
+  )
+}
+
+function relationColor(table, column) {
   return column?.color || table.color || '#2d7dd2'
 }
 
-function relationAnchor(table, columnName, targetTable) {
-  const columnIndex = table.columns.findIndex((column) => column.name === columnName)
+function relationAnchor(table, column, targetTable) {
+  const columnIndex = table.columns.findIndex((tableColumn) => tableColumn.id === column.id)
   if (columnIndex < 0) {
     return null
   }
 
-  const targetRight = targetTable.x > table.x + TABLE_WIDTH / 2
+  const columnRowElement =
+    typeof document === 'undefined'
+      ? null
+      : Array.from(document.querySelectorAll('[data-column-id]')).find(
+          (element) => element.getAttribute('data-column-id') === column.id,
+        )
+
+  const isTargetOnRight = targetTable.x > table.x + TABLE_WIDTH / 2
+  const anchorX = isTargetOnRight ? table.x + TABLE_WIDTH : table.x
+  const domAnchorY =
+    columnRowElement instanceof HTMLElement
+      ? table.y + columnRowElement.offsetTop + columnRowElement.offsetHeight / 2
+      : null
+  const anchorY = domAnchorY ?? table.y + HEADER_HEIGHT
+
   return {
-    x: targetRight ? table.x + TABLE_WIDTH : table.x,
-    y: table.y + HEADER_HEIGHT + COLUMN_LIST_PADDING_TOP + columnIndex * COLUMN_ROW_HEIGHT + COLUMN_ROW_HEIGHT / 2,
+    x: anchorX,
+    y: anchorY,
   }
 }
 
 function contrastColor(hexColor) {
   const hex = hexColor.replace('#', '')
-  if (hex.length !== 6) {
+  const normalizedHex = hex.length === 3 ? hex.split('').map((char) => `${char}${char}`).join('') : hex
+  if (normalizedHex.length !== 6) {
     return '#ffffff'
   }
 
-  const red = Number.parseInt(hex.slice(0, 2), 16)
-  const green = Number.parseInt(hex.slice(2, 4), 16)
-  const blue = Number.parseInt(hex.slice(4, 6), 16)
-  const luminance = (red * 299 + green * 587 + blue * 114) / 1000
-  return luminance > 150 ? '#132033' : '#ffffff'
+  const red = Number.parseInt(normalizedHex.slice(0, 2), 16)
+  const green = Number.parseInt(normalizedHex.slice(2, 4), 16)
+  const blue = Number.parseInt(normalizedHex.slice(4, 6), 16)
+  const luminance =
+    (red * LUMINANCE_RED_WEIGHT + green * LUMINANCE_GREEN_WEIGHT + blue * LUMINANCE_BLUE_WEIGHT) /
+    LUMINANCE_DIVISOR
+  return luminance > LUMINANCE_THRESHOLD ? '#132033' : '#ffffff'
 }
 
 const relationLines = computed(() => {
@@ -89,8 +119,14 @@ const relationLines = computed(() => {
         return null
       }
 
-      const start = relationAnchor(fromTable, relation.fromColumn, toTable)
-      const end = relationAnchor(toTable, relation.toColumn, fromTable)
+      const fromColumn = resolveRelationshipColumn(fromTable, relation.fromColumnId, relation.fromColumn)
+      const toColumn = resolveRelationshipColumn(toTable, relation.toColumnId, relation.toColumn)
+      if (!fromColumn || !toColumn) {
+        return null
+      }
+
+      const start = relationAnchor(fromTable, fromColumn, toTable)
+      const end = relationAnchor(toTable, toColumn, fromTable)
       if (!start || !end) {
         return null
       }
@@ -110,8 +146,8 @@ const relationLines = computed(() => {
         y1: start.y,
         x2: end.x,
         y2: end.y,
-        fromColor: relationColor(fromTable, relation.fromColumn),
-        toColor: relationColor(toTable, relation.toColumn),
+        fromColor: relationColor(fromTable, fromColumn),
+        toColor: relationColor(toTable, toColumn),
         arrowPoints: `${end.x},${end.y} ${arrowLeftX},${arrowLeftY} ${arrowRightX},${arrowRightY}`,
       }
     })
@@ -195,26 +231,29 @@ function deleteColumn(tableId, columnId) {
     return
   }
 
-  const column = table.columns.find((item) => item.id === columnId)
+  const column = table.columns.find((tableColumn) => tableColumn.id === columnId)
   if (!column) {
     return
   }
 
-  table.columns = table.columns.filter((item) => item.id !== columnId)
+  table.columns = table.columns.filter((tableColumn) => tableColumn.id !== columnId)
   relationships.value = relationships.value.filter((relation) => {
-    if (relation.fromTableId === tableId && relation.fromColumn === column.name) {
+    if (
+      relation.fromTableId === tableId &&
+      (relation.fromColumnId === column.id || relation.fromColumn === column.name)
+    ) {
       return false
     }
-    if (relation.toTableId === tableId && relation.toColumn === column.name) {
+    if (relation.toTableId === tableId && (relation.toColumnId === column.id || relation.toColumn === column.name)) {
       return false
     }
     return true
   })
 
-  if (relationshipDraft.value.fromTableId === tableId && relationshipDraft.value.fromColumn === column.name) {
+  if (relationshipDraft.value.fromTableId === tableId && relationshipDraft.value.fromColumn === column.id) {
     relationshipDraft.value.fromColumn = ''
   }
-  if (relationshipDraft.value.toTableId === tableId && relationshipDraft.value.toColumn === column.name) {
+  if (relationshipDraft.value.toTableId === tableId && relationshipDraft.value.toColumn === column.id) {
     relationshipDraft.value.toColumn = ''
   }
 }
@@ -256,9 +295,22 @@ function addRelationship() {
     return
   }
 
+  const fromTable = tableMap.value[draft.fromTableId]
+  const toTable = tableMap.value[draft.toTableId]
+  const fromColumn = resolveRelationshipColumn(fromTable, draft.fromColumn, draft.fromColumn)
+  const toColumn = resolveRelationshipColumn(toTable, draft.toColumn, draft.toColumn)
+  if (!fromColumn || !toColumn) {
+    return
+  }
+
   relationships.value.push({
     id: `rel-${relationships.value.length + 1}`,
-    ...draft,
+    fromTableId: draft.fromTableId,
+    toTableId: draft.toTableId,
+    fromColumn: fromColumn.name,
+    toColumn: toColumn.name,
+    fromColumnId: fromColumn.id,
+    toColumnId: toColumn.id,
     onDelete: 'RESTRICT',
     onUpdate: 'CASCADE',
   })
@@ -271,10 +323,28 @@ async function generateSql() {
   isGenerating.value = true
 
   try {
+    const sqlRelationships = relationships.value
+      .map((relation) => {
+        const fromTable = tableMap.value[relation.fromTableId]
+        const toTable = tableMap.value[relation.toTableId]
+        const fromColumn = resolveRelationshipColumn(fromTable, relation.fromColumnId, relation.fromColumn)
+        const toColumn = resolveRelationshipColumn(toTable, relation.toColumnId, relation.toColumn)
+        if (!fromTable || !toTable || !fromColumn || !toColumn) {
+          return null
+        }
+
+        return {
+          ...relation,
+          fromColumn: fromColumn.name,
+          toColumn: toColumn.name,
+        }
+      })
+      .filter(Boolean)
+
     const response = await fetch(`${apiBaseUrl}/api/generate-sql`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tables: tables.value, relationships: relationships.value }),
+      body: JSON.stringify({ tables: tables.value, relationships: sqlRelationships }),
     })
 
     const payload = await response.json()
@@ -308,7 +378,7 @@ async function generateSql() {
         </select>
         <select v-model="relationshipDraft.fromColumn">
           <option disabled value="">From column</option>
-          <option v-for="column in fromColumns" :key="`from-column-${column.id}`" :value="column.name">{{ column.name }}</option>
+          <option v-for="column in fromColumns" :key="`from-column-${column.id}`" :value="column.id">{{ column.name }}</option>
         </select>
         <select v-model="relationshipDraft.toTableId">
           <option disabled value="">To table</option>
@@ -316,7 +386,7 @@ async function generateSql() {
         </select>
         <select v-model="relationshipDraft.toColumn">
           <option disabled value="">To column</option>
-          <option v-for="column in toColumns" :key="`to-column-${column.id}`" :value="column.name">{{ column.name }}</option>
+          <option v-for="column in toColumns" :key="`to-column-${column.id}`" :value="column.id">{{ column.name }}</option>
         </select>
         <button type="button" @click="addRelationship">Add Relationship</button>
       </div>
@@ -380,7 +450,13 @@ async function generateSql() {
         </header>
 
         <div class="column-list">
-          <div v-for="column in table.columns" :key="column.id" class="column-row" :style="{ backgroundColor: column.color }">
+          <div
+            v-for="column in table.columns"
+            :key="column.id"
+            class="column-row"
+            :data-column-id="column.id"
+            :style="{ backgroundColor: column.color }"
+          >
             <input v-model="column.name" aria-label="Column name" />
             <input v-model="column.type" aria-label="Column type" />
             <label>
@@ -389,13 +465,27 @@ async function generateSql() {
             </label>
             <div class="column-actions">
               <input v-model="column.color" type="color" aria-label="Column color" />
-              <button type="button" class="danger-button" @click="deleteColumn(table.id, column.id)">Delete column</button>
+              <button
+                type="button"
+                class="danger-button"
+                :aria-label="`Delete column ${column.name}`"
+                @click="deleteColumn(table.id, column.id)"
+              >
+                Delete column
+              </button>
             </div>
           </div>
         </div>
 
         <button type="button" @click="addColumn(table.id)">Add column</button>
-        <button type="button" class="danger-button" @click="deleteTable(table.id)">Delete table</button>
+        <button
+          type="button"
+          class="danger-button"
+          :aria-label="`Delete table ${table.name}`"
+          @click="deleteTable(table.id)"
+        >
+          Delete table
+        </button>
       </article>
     </main>
   </div>
