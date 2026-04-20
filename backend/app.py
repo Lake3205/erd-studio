@@ -20,8 +20,8 @@ def generate_sql() -> tuple[dict[str, str], int]:
     payload = request.get_json(silent=True) or {}
     try:
         sql_script = generate_sql_script(payload)
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+    except ValueError:
+        return jsonify({"error": "Invalid ERD schema payload"}), 400
 
     return jsonify({"sql": sql_script}), 200
 
