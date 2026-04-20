@@ -1,0 +1,48 @@
+services:
+  mariadb:
+    image: mariadb:11
+    container_name: erd-studio-db
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: erd_studio
+      MYSQL_USER: erd
+      MYSQL_PASSWORD: erd
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: erd-studio-phpmyadmin
+    environment:
+      PMA_HOST: mariadb
+      PMA_PORT: 3306
+      MYSQL_ROOT_PASSWORD: root
+    depends_on:
+      - mariadb
+    ports:
+      - "8080:80"
+
+  backend:
+    build:
+      context: ./backend
+    container_name: erd-studio-backend
+    environment:
+      FLASK_ENV: development
+    ports:
+      - "5000:5000"
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: erd-studio-frontend
+    environment:
+      VITE_API_BASE_URL: http://backend:5000
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+
+volumes:
+  mariadb_data:
