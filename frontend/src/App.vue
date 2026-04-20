@@ -18,6 +18,7 @@ const tables = ref([
         primaryKey: true,
         nullable: false,
         autoIncrement: true,
+        unique: false,
         color: '#eef4ff',
       },
       {
@@ -51,6 +52,17 @@ const LUMINANCE_GREEN_WEIGHT = 587
 const LUMINANCE_BLUE_WEIGHT = 114
 const LUMINANCE_DIVISOR = 1000
 const LUMINANCE_THRESHOLD = 150
+const COLUMN_TYPES = [
+  'INT',
+  'BIGINT',
+  'VARCHAR(255)',
+  'TEXT',
+  'BOOLEAN',
+  'DATE',
+  'DATETIME',
+  'TIMESTAMP',
+  'DECIMAL(10,2)',
+]
 
 function resolveRelationshipColumn(table, columnId, columnName) {
   if (!table) {
@@ -181,6 +193,7 @@ function addTable() {
         primaryKey: true,
         nullable: false,
         autoIncrement: true,
+        unique: false,
         color: '#eef4ff',
       },
     ],
@@ -458,10 +471,18 @@ async function generateSql() {
             :style="{ backgroundColor: column.color }"
           >
             <input v-model="column.name" aria-label="Column name" />
-            <input v-model="column.type" aria-label="Column type" />
+            <select v-model="column.type" aria-label="Column type">
+              <option v-for="columnType in COLUMN_TYPES" :key="`${column.id}-${columnType}`" :value="columnType">
+                {{ columnType }}
+              </option>
+            </select>
             <label>
               PK
               <input v-model="column.primaryKey" type="checkbox" />
+            </label>
+            <label>
+              Unique
+              <input v-model="column.unique" type="checkbox" />
             </label>
             <div class="column-actions">
               <input v-model="column.color" type="color" aria-label="Column color" />
