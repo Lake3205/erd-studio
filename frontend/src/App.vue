@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { generateSqlScript } from './sqlGenerator'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
 
@@ -353,20 +354,28 @@ async function generateSql() {
         }
       })
       .filter(Boolean)
+    const schema = { tables: tables.value, relationships: sqlRelationships }
 
-    const response = await fetch(`${apiBaseUrl}/api/generate-sql`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tables: tables.value, relationships: sqlRelationships }),
-    })
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/generate-sql`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(schema),
+      })
 
-    const payload = await response.json()
+      const payload = await response.json()
 
-    if (!response.ok) {
-      throw new Error(payload.error || 'Failed to generate SQL')
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to generate SQL')
+      }
+
+      sqlScript.value = payload.sql || ''
+    } catch (error) {
+      if (!(error instanceof TypeError)) {
+        throw error
+      }
+      sqlScript.value = generateSqlScript(schema)
     }
-
-    sqlScript.value = payload.sql || ''
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Failed to generate SQL'
   } finally {
