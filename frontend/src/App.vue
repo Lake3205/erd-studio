@@ -555,19 +555,19 @@ async function generateSql() {
               :data-column-id="column.id"
               :style="{ backgroundColor: column.color }"
             >
-              <input v-model="column.name" aria-label="Column name" />
-              <select v-model="column.type" aria-label="Column type">
+              <input v-model="column.name" :readonly="isScreenshotMode" aria-label="Column name" />
+              <select v-model="column.type" :disabled="isScreenshotMode" aria-label="Column type">
                 <option v-for="columnType in COLUMN_TYPES" :key="`${column.id}-${columnType}`" :value="columnType">
                   {{ columnType }}
                 </option>
               </select>
               <label>
                 PK
-                <input v-model="column.primaryKey" type="checkbox" />
+                <input v-model="column.primaryKey" :disabled="isScreenshotMode" type="checkbox" />
               </label>
               <label>
                 Unique
-                <input v-model="column.unique" type="checkbox" />
+                <input v-model="column.unique" :disabled="isScreenshotMode" type="checkbox" />
               </label>
               <div v-if="!isScreenshotMode" class="column-actions">
                 <input v-model="column.color" type="color" aria-label="Column color" />
