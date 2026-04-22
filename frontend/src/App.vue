@@ -40,6 +40,9 @@ const relationshipDraft = ref({ fromTableId: '', fromColumn: '', toTableId: '', 
 const sqlScript = ref('')
 const isGenerating = ref(false)
 const errorMessage = ref('')
+const isScreenshotMode = ref(false)
+const canvasScale = ref(1)
+const canvasRef = ref(null)
 
 let tableCounter = 1
 let columnCounter = 2
@@ -64,6 +67,46 @@ const COLUMN_TYPES = [
   'TIMESTAMP',
   'DECIMAL(10,2)',
 ]
+const MIN_ZOOM = 0.5
+const MAX_ZOOM = 2
+const ZOOM_STEP = 0.1
+const PAN_STEP = 180
+
+function setZoom(nextZoom) {
+  canvasScale.value = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Number(nextZoom.toFixed(2))))
+}
+
+function zoomIn() {
+  setZoom(canvasScale.value + ZOOM_STEP)
+}
+
+function zoomOut() {
+  setZoom(canvasScale.value - ZOOM_STEP)
+}
+
+function resetZoom() {
+  setZoom(1)
+}
+
+function panCanvas(deltaX, deltaY) {
+  const canvas = canvasRef.value
+  if (!(canvas instanceof HTMLElement)) {
+    return
+  }
+  canvas.scrollBy({ left: deltaX, top: deltaY, behavior: 'smooth' })
+}
+
+function getCanvasPoint(event) {
+  const canvas = canvasRef.value
+  if (!(canvas instanceof HTMLElement)) {
+    return { x: event.clientX, y: event.clientY }
+  }
+  const rect = canvas.getBoundingClientRect()
+  return {
+    x: (event.clientX - rect.left + canvas.scrollLeft) / canvasScale.value,
+    y: (event.clientY - rect.top + canvas.scrollTop) / canvasScale.value,
+  }
+}
 
 function resolveRelationshipColumn(table, columnId, columnName) {
   if (!table) {
@@ -277,11 +320,12 @@ function startDrag(tableId, event) {
   if (!table) {
     return
   }
+  const point = getCanvasPoint(event)
 
   activeDrag = {
     tableId,
-    offsetX: event.clientX - table.x,
-    offsetY: event.clientY - table.y,
+    offsetX: point.x - table.x,
+    offsetY: point.y - table.y,
   }
 }
 
@@ -294,9 +338,10 @@ function onCanvasMove(event) {
   if (!table) {
     return
   }
+  const point = getCanvasPoint(event)
 
-  table.x = Math.max(16, event.clientX - activeDrag.offsetX)
-  table.y = Math.max(16, event.clientY - activeDrag.offsetY)
+  table.x = Math.max(16, point.x - activeDrag.offsetX)
+  table.y = Math.max(16, point.y - activeDrag.offsetY)
 }
 
 function stopDrag() {
@@ -389,10 +434,14 @@ async function generateSql() {
     <aside class="sidebar">
       <h1>ERD Studio</h1>
       <p>Drag tables on the canvas, define relationships, and generate SQL scripts.</p>
+      <label class="mode-toggle">
+        <input v-model="isScreenshotMode" type="checkbox" />
+        Screenshot mode (hide editing controls)
+      </label>
 
-      <button type="button" @click="addTable">Add Table</button>
+      <button v-if="!isScreenshotMode" type="button" @click="addTable">Add Table</button>
 
-      <div class="relationship-builder">
+      <div v-if="!isScreenshotMode" class="relationship-builder">
         <h2>Relationship</h2>
         <select v-model="relationshipDraft.fromTableId">
           <option disabled value="">From table</option>
@@ -427,96 +476,125 @@ async function generateSql() {
       />
     </aside>
 
-    <main class="canvas" @mousemove="onCanvasMove" @mouseup="stopDrag" @mouseleave="stopDrag">
-      <svg class="relationship-lines" width="100%" height="100%" aria-hidden="true">
-        <defs>
-          <linearGradient
+    <main ref="canvasRef" class="canvas" @mousemove="onCanvasMove" @mouseup="stopDrag" @mouseleave="stopDrag">
+      <div v-if="!isScreenshotMode" class="canvas-toolbar">
+        <div class="zoom-controls">
+          <button type="button" aria-label="Zoom out" @click="zoomOut">−</button>
+          <span>{{ Math.round(canvasScale * 100) }}%</span>
+          <button type="button" aria-label="Zoom in" @click="zoomIn">+</button>
+          <button type="button" @click="resetZoom">Reset</button>
+        </div>
+        <div class="pan-controls">
+          <button type="button" aria-label="Move up" @click="panCanvas(0, -PAN_STEP)">↑</button>
+          <div>
+            <button type="button" aria-label="Move left" @click="panCanvas(-PAN_STEP, 0)">←</button>
+            <button type="button" aria-label="Move right" @click="panCanvas(PAN_STEP, 0)">→</button>
+          </div>
+          <button type="button" aria-label="Move down" @click="panCanvas(0, PAN_STEP)">↓</button>
+        </div>
+      </div>
+      <div class="canvas-content" :style="{ transform: `scale(${canvasScale})` }">
+        <svg class="relationship-lines" width="100%" height="100%" aria-hidden="true">
+          <defs>
+            <linearGradient
+              v-for="line in relationLines"
+              :id="line.gradientId"
+              :key="`gradient-${line.id}`"
+              gradientUnits="userSpaceOnUse"
+              :x1="line.x1"
+              :y1="line.y1"
+              :x2="line.x2"
+              :y2="line.y2"
+            >
+              <stop offset="0%" :stop-color="line.fromColor" />
+              <stop offset="100%" :stop-color="line.toColor" />
+            </linearGradient>
+          </defs>
+          <line
             v-for="line in relationLines"
-            :id="line.gradientId"
-            :key="`gradient-${line.id}`"
-            gradientUnits="userSpaceOnUse"
+            :key="line.id"
             :x1="line.x1"
             :y1="line.y1"
             :x2="line.x2"
             :y2="line.y2"
-          >
-            <stop offset="0%" :stop-color="line.fromColor" />
-            <stop offset="100%" :stop-color="line.toColor" />
-          </linearGradient>
-        </defs>
-        <line
-          v-for="line in relationLines"
-          :key="line.id"
-          :x1="line.x1"
-          :y1="line.y1"
-          :x2="line.x2"
-          :y2="line.y2"
-          :stroke="`url(#${line.gradientId})`"
-        />
-        <polygon v-for="line in relationLines" :key="`${line.id}-arrow`" :points="line.arrowPoints" :fill="line.toColor" />
-      </svg>
+            :stroke="`url(#${line.gradientId})`"
+          />
+          <polygon
+            v-for="line in relationLines"
+            :key="`${line.id}-arrow`"
+            :points="line.arrowPoints"
+            :fill="line.toColor"
+          />
+        </svg>
 
-      <article
-        v-for="table in tables"
-        :key="table.id"
-        class="table-card"
-        :style="{ left: `${table.x}px`, top: `${table.y}px`, borderColor: table.color }"
-      >
-        <header
-          class="drag-handle"
-          :style="{ backgroundColor: table.color, color: contrastColor(table.color) }"
-          @mousedown="startDrag(table.id, $event)"
+        <article
+          v-for="table in tables"
+          :key="table.id"
+          class="table-card"
+          :style="{ left: `${table.x}px`, top: `${table.y}px`, borderColor: table.color }"
         >
-          <input v-model="table.name" :style="{ color: contrastColor(table.color) }" aria-label="Table name" />
-          <input v-model="table.color" type="color" aria-label="Table color" @mousedown.stop />
-        </header>
-
-        <div class="column-list">
-          <div
-            v-for="column in table.columns"
-            :key="column.id"
-            class="column-row"
-            :data-column-id="column.id"
-            :style="{ backgroundColor: column.color }"
+          <header
+            class="drag-handle"
+            :style="{ backgroundColor: table.color, color: contrastColor(table.color) }"
+            @mousedown="startDrag(table.id, $event)"
           >
-            <input v-model="column.name" aria-label="Column name" />
-            <select v-model="column.type" aria-label="Column type">
-              <option v-for="columnType in COLUMN_TYPES" :key="`${column.id}-${columnType}`" :value="columnType">
-                {{ columnType }}
-              </option>
-            </select>
-            <label>
-              PK
-              <input v-model="column.primaryKey" type="checkbox" />
-            </label>
-            <label>
-              Unique
-              <input v-model="column.unique" type="checkbox" />
-            </label>
-            <div class="column-actions">
-              <input v-model="column.color" type="color" aria-label="Column color" />
-              <button
-                type="button"
-                class="danger-button"
-                :aria-label="`Delete column ${column.name}`"
-                @click="deleteColumn(table.id, column.id)"
-              >
-                Delete column
-              </button>
+            <template v-if="isScreenshotMode">
+              <span class="table-title">{{ table.name }}</span>
+            </template>
+            <template v-else>
+              <input v-model="table.name" :style="{ color: contrastColor(table.color) }" aria-label="Table name" />
+              <input v-model="table.color" type="color" aria-label="Table color" @mousedown.stop />
+            </template>
+          </header>
+
+          <div class="column-list">
+            <div
+              v-for="column in table.columns"
+              :key="column.id"
+              class="column-row"
+              :data-column-id="column.id"
+              :style="{ backgroundColor: column.color }"
+            >
+              <input v-model="column.name" :readonly="isScreenshotMode" aria-label="Column name" />
+              <select v-model="column.type" :disabled="isScreenshotMode" aria-label="Column type">
+                <option v-for="columnType in COLUMN_TYPES" :key="`${column.id}-${columnType}`" :value="columnType">
+                  {{ columnType }}
+                </option>
+              </select>
+              <label>
+                PK
+                <input v-model="column.primaryKey" :disabled="isScreenshotMode" type="checkbox" />
+              </label>
+              <label>
+                Unique
+                <input v-model="column.unique" :disabled="isScreenshotMode" type="checkbox" />
+              </label>
+              <div v-if="!isScreenshotMode" class="column-actions">
+                <input v-model="column.color" type="color" aria-label="Column color" />
+                <button
+                  type="button"
+                  class="danger-button"
+                  :aria-label="`Delete column ${column.name}`"
+                  @click="deleteColumn(table.id, column.id)"
+                >
+                  Delete column
+                </button>
+              </div>
             </div>
           </div>
-        </div>
 
-        <button type="button" @click="addColumn(table.id)">Add column</button>
-        <button
-          type="button"
-          class="danger-button"
-          :aria-label="`Delete table ${table.name}`"
-          @click="deleteTable(table.id)"
-        >
-          Delete table
-        </button>
-      </article>
+          <button v-if="!isScreenshotMode" type="button" @click="addColumn(table.id)">Add column</button>
+          <button
+            v-if="!isScreenshotMode"
+            type="button"
+            class="danger-button"
+            :aria-label="`Delete table ${table.name}`"
+            @click="deleteTable(table.id)"
+          >
+            Delete table
+          </button>
+        </article>
+      </div>
     </main>
   </div>
 </template>
