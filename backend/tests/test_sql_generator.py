@@ -37,6 +37,8 @@ def test_generate_sql_script_creates_tables_and_foreign_keys() -> None:
     sql = generate_sql_script(schema)
 
     assert "CREATE TABLE `users`" in sql
+    assert "PRIMARY KEY (`id`)" in sql
+    assert "UNIQUE (`email`)" in sql
     assert "CREATE TABLE `posts`" in sql
     assert "FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)" in sql
 

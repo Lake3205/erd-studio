@@ -157,7 +157,8 @@ textarea {
   padding: 0.35rem;
 }
 
-.column-row input {
+.column-row input,
+.column-row select {
   width: 100%;
   border: 1px solid #d9e4f0;
   border-radius: 4px;
