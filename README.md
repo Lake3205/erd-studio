@@ -45,6 +45,8 @@ npm run dev
 
 `POST /api/generate-sql`
 
+The frontend first tries this API and automatically falls back to local SQL generation if the API is unreachable.
+
 Example payload:
 
 ```json
